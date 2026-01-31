@@ -1,101 +1,116 @@
-# 🔍 ArXiv Semantic Search System
+# 🧠 ArXiv Intelligent Search: Privacy-First RAG at Scale
+![Privacy First](https://img.shields.io/badge/Privacy-100%25_Local-green?style=for-the-badge)
+![Tech Stack](https://img.shields.io/badge/Stack-FastAPI_|_FAISS_|_Ollama-blue?style=for-the-badge)
 
-A complete, production-ready intelligent search system for 24K+ research papers. Built for hackathon performance with **Local LLM-powered semantic search**, data-grounded synthesis, and sub-second response times.
+> **A full-stack Semantic Search Engine capable of indexing 24,000+ research papers and performing citation-grounded Q&A using 100% local AI.**
 
-## 🎯 Problem Overview
+---
 
-Traditional keyword search fails to capture semantic meaning. This system solves that by:
-- **Semantic Search**: Uses local vector embeddings to find conceptually related papers.
-- **RAG Architecture**: Retrieval-Augmented Generation for grounded answers.
-- **Local AI**: 100% Privacy-focused using Ollama (running Mistral 7B).
-- **Scalable**: Indexing performed on high-performance GPUs (via Colab) and served locally.
+## 🏗️ Architecture: The "Hybrid Compute" Model
 
-## 📸 Screenshots
+We successfully solved the challenge of **searching 24k papers** without massive local resources by innovating a **Hybrid Architecture**:
+1.  **Cloud Ingestion**: We leverage Google Colab T4 GPUs to crunch the massive dataset in minutes.
+2.  **Local Inference**: We serve the application locally using quantized models for privacy and zero latency.
 
-![Search Interface](screenshots/ArXiv%20Semantic%20Search-mh.png)
-_Semantic Search Interface with Complex Queries_
+```mermaid
+graph LR
+    subgraph "Phase 1: Cloud Efficiency (Google Colab)"
+    Raw[📄 24k Papers] -->|GPU Accelerated| Embed[🧠 Embeddings]
+    Embed -->|Build Index| VectorDB[(🗄️ FAISS Index)]
+    end
 
-![Search Results](screenshots/ArXiv%20Semantic%20Search-mh%20(1).png)
-_Synthesized Answer with Citations_
+    subgraph "Phase 2: Local Privacy (User's Laptop)"
+    VectorDB -->|Download| LocalApp[💻 Local App]
+    User[👤 User Question] --> LocalApp
+    LocalApp -->|RAG| LocalLLM[🤖 Ollama (Mistral)]
+    LocalLLM -->|Synthesize| Answer[💬 Cited Answer]
+    end
+    
+    style VectorDB fill:#ffaa00,stroke:#333,stroke-width:2px
+    style LocalLLM fill:#00ffaa,stroke:#333,stroke-width:2px
+```
 
-![Results Detail](screenshots/ArXiv%20Semantic%20Search-mh%20(2).png)
-_Detailed Paper Hits and Citations_
+---
 
-## 🚀 Quick Start (30 seconds)
+## 🚀 Why This Project Wins?
+
+Traditional search engines (Ctrl+F) fail because they look for *words*. We built a system that understands *meaning*.
+
+### 1. 🧠 True Semantic Understanding
+If you search for **"BERT specific limitations"**, our system finds papers discussing "computational costs" and "context window issues"—even if the word "limitation" never appears.
+
+### 2. 🛡️ 100% Local & Private (Zero Cost)
+Unlike API-wrapper projects, this is **Real Engineering**.
+*   **No OpenAI API Keys required**.
+*   **No Cloud bills**.
+*   **Complete Privacy**: Your queries never leave your machine.
+*   Powered by **Mistral 7B** (via Ollama) and **SentenceTransformers**.
+
+### 3. 📚 Citation-Grounded RAG
+We don't just "ask AI". We implement **Retrieval Augmented Generation**:
+1.  **Retrieve**: Find the exact paragraphs from 24,000 papers proving a fact.
+2.  **Generate**: Ask the AI to write an answer *using only those facts*.
+3.  **Result**: An answer with `(Paper ID)` citations that you can trust.
+
+---
+
+## 📸 Demo
+
+| **Complex Semantic Queries** | **Grounded Answers with Citations** |
+|:---:|:---:|
+| ![Search Interface](screenshots/ArXiv%20Semantic%20Search-mh.png) | ![Search Results](screenshots/ArXiv%20Semantic%20Search-mh%20(1).png) |
+
+---
+
+## ⚡ Quick Start
 
 ### Prerequisites
-- Python 3.8+
-- [Ollama](https://ollama.ai/) installed & running (`ollama serve`).
+*   **Python 3.8+**
+*   **[Ollama](https://ollama.ai/)** (The engine for running local AI)
 
-### Setup & Run
+### Step 1: Install & Model Setup
+Install the dependencies and pull the AI model.
 
-```bash
-# 1. Start Ollama and pull the model (Mistral 7B)
+```powershell
+# 1. Start Ollama and get the brain (Mistral 7B)
 ollama pull mistral:7b
 ollama serve
 
-# 2. Setup Python Environment
-python -m venv venv
-.\venv\Scripts\activate
+# 2. Install Python libs
 pip install -r requirements.txt
+```
 
-# 3. Process Papers (24k Full Dataset)
-# Option A: Run the `colab_ingest.py` script on Google Colab (Fastest - 5 mins).
-# Option B (Local Demo):
-python ingest.py --limit 1000
+### Step 2: Ingest Data (The Hybrid Way)
+*   **Option A (Recommended for Judges):** Run `ingest.py` locally with a small sample to verify it works instantly.
+    ```bash
+    python ingest.py --limit 1000
+    ```
+*   **Option B (The "Wow" Factor):** Use our `colab_ingest.py` script on Google Colab to process the **Full 24,000 Dataset** in <5 minutes using free Cloud GPUs, then drop the index file here.
 
-# 4. Start the Application
+### Step 3: Launch
+```bash
 uvicorn app:app --reload
-
-# 5. Open Browser
-# Navigate to http://localhost:8000
 ```
-
-## 🏗️ Architecture
-
-```
-┌─────────────────┐      ┌──────────────────┐      ┌─────────────────┐
-│   Data Ingest   │      │   Search API     │      │    Frontend     │
-│   (Colab GPU)   │      │   (FastAPI)      │      │ (index.html)    │
-├─────────────────┤      ├──────────────────┤      ├─────────────────┤
-│ • Load JSON     │─────▶│ • FAISS Index    │◀─────│ • Search Box    │
-│ • Chunking      │      │ • Semantic       │      │ • Results View  │
-│ • Embeddings    │      │   Search         │      │ • Real-time     │
-│  (SentenceTx)   │      │ • Local LLM      │      │                 │
-└─────────────────┘      │   (Ollama)       │      └─────────────────┘
-                         └──────────────────┘
-                                  │
-                                  ▼
-                         ┌──────────────────┐
-                         │   Ollama / API   │
-                         │   (Mistral 7B)   │
-                         └──────────────────┘
-```
-
-## Implementation Details
-
-### Design Decisions
-1.  **Architecture**: Split ingestion (Heavy GPU work) from Serving (Fast CPU Work).
-2.  **Vector Store**: FAISS for millisecond-level similarity search.
-3.  **Local LLM**: Switched to Ollama (Mistral 7B) to ensure 0% reliance on paid APIs and 100% offline capability.
-4.  **Prompt Engineering**: Optimized system prompts to enforce strict citation formats `Title (ID)` required by the problem statement.
-
-## ✅ Task Status
-
-- [x] **Ingestion**: Scaled to 24k papers using Colab GPU acceleration.
-- [x] **Vector Search**: Local FAISS index integration.
-- [x] **Synthesis**: Replaced Mock/Cloud APIs with robust Local RAG (Ollama).
-- [x] **Frontend**: Clean, responsive UI.
-
-## 🔧 Tech Stack
-
-| Component | Technology | Purpose |
-|-----------|------------|---------|
-| **Language** | Python 3 | Core logic |
-| **Backend** | FastAPI | High-performance API |
-| **Vector DB** | FAISS | Similarity Search |
-| **LLM** | Ollama (Mistral) | Answer Synthesis |
-| **Embeddings** | all-MiniLM-L6-v2 | Vector generation |
+Open **http://localhost:8000** and start researching.
 
 ---
+
+## 🔧 Technology Stack
+
+We chose a stack optimized for **Performance** and **Portability**.
+
+| Component | Tech | Why we chose it? |
+| :--- | :--- | :--- |
+| **Backend** | **FastAPI** | Async Python is 3x faster than Flask for ML workloads. |
+| **Vector Engine** | **FAISS** | Facebook's engine is the industry standard for billion-scale search. |
+| **Local LLM** | **Ollama** | Seamless local inference for heavy models like Mistral/Llama. |
+| **Embeddings** | **MiniLM-L6** | The best trade-off between speed (CPU friendly) and accuracy. |
+| **Architecture** | **RAG** | Retrieval Augmented Generation prevents hallucinations. |
+
+---
+
+## 🏆 Conclusion
+
+This project demonstrates that **Enterprise-grade Semantic Search** doesn't require Enterprise-grade hardware or budget. By combining **Smart Ingestion (Colab)** with **Efficient Inference (Local RAG)**, we've built a search engine that is free, fast, and fiercely accurate.
+
 *Built for the SkillRank Hackathon.*
