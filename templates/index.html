@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ArXiv Semantic Search</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>ArXiv Semantic Search</h1>
+            <p>Full-stack semantic search over research papers using OpenAI embeddings & FAISS.</p>
+            <nav>
+                <a href="https://github.com/google-deepmind/kiro" target="_blank">Powered by Kiro</a> |
+                <span title="See .kiro/specs/arxiv-semantic-search/design.md">Design Doc</span> |
+                <span title="See .kiro/specs/arxiv-semantic-search/requirements.md">Requirements</span>
+            </nav>
+        </header>
+
+        <main>
+            <div class="search-box">
+                <textarea id="queryInput" placeholder="Enter a research question (e.g. 'What are the limitations of Transformer models?')..."></textarea>
+                <div class="controls">
+                    <label for="topK">Top K:</label>
+                    <select id="topK">
+                        <option value="3">3</option>
+                        <option value="5" selected>5</option>
+                        <option value="10">10</option>
+                    </select>
+                    <button id="searchBtn" onclick="submitSearch()">Search</button>
+                </div>
+            </div>
+
+            <div id="loading" class="hidden">Thinking...</div>
+            <div id="error" class="hidden"></div>
+            
+            <div id="results" class="hidden">
+                <div class="answer-section">
+                    <h2>Synthesized Answer</h2>
+                    <div id="llmAnswer" class="typo"></div>
+                </div>
+
+                <div class="hits-section">
+                    <h2>Source Papers</h2>
+                    <div id="hitsList"></div>
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <p>Run locally with <code>uvicorn app:app</code>. See README.md for details.</p>
+        </footer>
+    </div>
+    <script src="/static/main.js"></script>
+</body>
+</html>
