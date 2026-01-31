@@ -56,9 +56,14 @@ We don't just "ask AI". We implement **Retrieval Augmented Generation**:
 
 ## 📸 Demo
 
-| **Complex Semantic Queries** | **Grounded Answers with Citations** |
-|:---:|:---:|
-| ![Search Interface](screenshots/ArXiv%20Semantic%20Search-mh.png) | ![Search Results](screenshots/ArXiv%20Semantic%20Search-mh%20(1).png) |
+### Output 1
+![Search 1](screenshots/ArXiv%20Semantic%20Search-mh.png)
+
+### Output 2
+![Search 2](screenshots/ArXiv%20Semantic%20Search-mh%20(1).png)
+
+### Output 3
+![Search 3](screenshots/ArXiv%20Semantic%20Search-mh%20(2).png)
 
 ---
 
