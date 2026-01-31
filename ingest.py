@@ -57,7 +57,122 @@ def get_embedding_client(force_local: bool = False):
     print("Error: neither OpenAI key present nor sentence-transformers installed.")
     sys.exit(1)
 
-# ... (rest of code)
+def generate_embeddings(texts: List[str], client_type: str, client: Any, batch_size=100) -> np.ndarray:
+    embeddings = []
+    total = len(texts)
+    
+    print(f"Generating embeddings for {total} chunks using {client_type}...")
+    
+    for i in range(0, total, batch_size):
+        batch = texts[i : i + batch_size]
+        if client_type == "openai":
+            # Replace newlines similar to OpenAI recommendations
+            cleaned_batch = [t.replace("\n", " ") for t in batch]
+            try:
+                response = client.embeddings.create(input=cleaned_batch, model=EMBEDDING_MODEL_OPENAI)
+                batch_embs = [d.embedding for d in response.data]
+                embeddings.extend(batch_embs)
+            except Exception as e:
+                print(f"Error calling OpenAI API: {e}")
+                # Fallback or exit? For ingest, probably exit to avoid partial corrupted index
+                sys.exit(1)
+        else:
+            # SentenceTransformer
+            batch_embs = client.encode(batch)
+            embeddings.extend(batch_embs)
+        
+        sys.stdout.write(f"\rProcessed {min(i + batch_size, total)}/{total}")
+        sys.stdout.flush()
+    
+    print("\nNormalization...")
+    emb_array = np.array(embeddings, dtype='float32')
+    # L2 Normalize for Cosine Similarity
+    faiss.normalize_L2(emb_array)
+    return emb_array
+
+def create_chunks(papers: List[Dict], chunk_size: int) -> List[TextChunk]:
+    chunks = []
+    for paper in papers:
+        # Extract fields safely
+        p_id = paper.get('id', 'unknown')
+        title = paper.get('title', 'No Title')
+        summary = paper.get('summary', '') or paper.get('abstract', '') # Handle both summary/abstract keys
+        
+        # Helper to get first link
+        links = paper.get('arxiv_links', [])
+        # Sometimes links are strings, sometimes dicts depending on dataset version
+        url = ""
+        if isinstance(links, list) and len(links) > 0:
+            first = links[0]
+            if isinstance(first, dict):
+                url = first.get('href', '')
+            elif isinstance(first, str):
+                url = first
+        if not url:
+             # Fallback if id looks like an arxiv id
+             url = f"https://arxiv.org/abs/{p_id}"
+
+        # Combine proper content
+        full_text = f"{title}\n{summary}"
+        
+        # Simple chunking
+        # Design says ~800 chars. We'll do a simple split or window.
+        # Given abstracts are usually short, often 1 chunk is enough.
+        # But let's check length.
+        
+        start = 0
+        text_len = len(full_text)
+        chunk_idx = 0
+        
+        while start < text_len:
+            end = min(start + chunk_size, text_len)
+            # Try to break on space
+            if end < text_len:
+                last_space = full_text.rfind(' ', start, end)
+                if last_space != -1 and last_space > start:
+                    end = last_space
+            
+            segment = full_text[start:end].strip()
+            if segment:
+                chunks.append(TextChunk(
+                    paper_id=p_id,
+                    title=title,
+                    content=segment,
+                    chunk_index=chunk_idx,
+                    arxiv_url=url
+                ))
+                chunk_idx += 1
+            
+            start = end
+            
+    return chunks
+
+def load_arxiv_data(filepath: str, limit: Optional[int]) -> List[Dict]:
+    print(f"Loading data from {filepath}...")
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            
+        if isinstance(data, dict):
+            # Sometimes wrapped in a key
+            keys = list(data.keys())
+            if len(keys) == 1 and isinstance(data[keys[0]], list):
+                data = data[keys[0]]
+                
+        if not isinstance(data, list):
+            print("Error: PDF JSON root is not a list.")
+            sys.exit(1)
+            
+        if limit:
+            return data[:limit]
+        return data
+        
+    except FileNotFoundError:
+        print(f"Error: File {filepath} not found.")
+        sys.exit(1)
+    except json.JSONDecodeError:
+        print(f"Error: Failed to parse JSON in {filepath}")
+        sys.exit(1)
 
 def main():
     parser = argparse.ArgumentParser(description="ArXiv Semantic Search Ingestion")

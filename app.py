@@ -155,6 +155,8 @@ def generate_llm_answer(query: str, hits: List[dict]) -> str:
         # Cap context
         context_lines = context_lines[:6]
     
+    context_str = "\n".join(context_lines)
+    
     prompt = f"""You are a research assistant. Answer the user's question based ONLY on the following paper snippets.
 Perform cross-document reasoning if applicable.
 Cite your sources using the format: "1) Title — Paper ID".
@@ -162,7 +164,7 @@ Keep the answer concise (3-6 sentences).
 If the context doesn't answer the question, say so.
 
 Context:
-{"\n".join(context_lines)}
+{context_str}
 
 Question: {query}
 Answer:"""
