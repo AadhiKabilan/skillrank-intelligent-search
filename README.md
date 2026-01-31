@@ -12,32 +12,26 @@ We successfully solved the challenge of **searching 24k papers** without massive
 1.  **Cloud Ingestion**: We leverage Google Colab T4 GPUs to crunch the massive dataset in minutes.
 2.  **Local Inference**: We serve the application locally using quantized models for privacy and zero latency.
 
-```mermaid
-graph LR
-    subgraph "Phase 1: Cloud Efficiency (Google Colab)"
-    Raw[📄 24k Papers] -->|GPU Accelerated| Embed[🧠 Embeddings]
-    Embed -->|Build Index| VectorDB[(🗄️ FAISS Index)]
-    end
+## 🏗️ Architecture
 
-    subgraph "Phase 2: Local Privacy (User's Laptop)"
-    VectorDB -->|Download| LocalApp[💻 Local App]
-    User[👤 User Question] --> LocalApp
-    LocalApp -->|RAG| LocalLLM[🤖 Ollama (Mistral)]
-    LocalLLM -->|Synthesize| Answer[💬 Cited Answer]
-    end
-    
-    style VectorDB fill:#ffaa00,stroke:#333,stroke-width:2px
-    style LocalLLM fill:#00ffaa,stroke:#333,stroke-width:2px
 ```
-
----
-
-## 🚀 Why This Project Wins?
-
-Traditional search engines (Ctrl+F) fail because they look for *words*. We built a system that understands *meaning*.
-
-### 1. 🧠 True Semantic Understanding
-If you search for **"BERT specific limitations"**, our system finds papers discussing "computational costs" and "context window issues"—even if the word "limitation" never appears.
+Data Pipeline (ingest.py)     Search API (app.py)        Frontend (index.html)
+┌─────────────────────┐      ┌─────────────────────┐     ┌─────────────────────┐
+│ • Load JSON         │      │ • FastAPI Server    │     │ • Search Form       │
+│ • Chunk Text        │ ──── │ • FAISS Index       │ ──── │ • Results Display   │
+│ • Generate          │      │ • OpenAI LLM        │     │ • Citations         │
+│   Embeddings        │      │ • Synthesis         │     │ • ArXiv Links       │
+│ • Build Index       │      │ • REST API          │     │ • Vanilla JS        │
+└─────────────────────┘      └─────────────────────┘     └─────────────────────┘
+         │                            │                           │
+         ▼                            ▼                           ▼
+┌─────────────────────┐      ┌─────────────────────┐     ┌─────────────────────┐
+│ • index.faiss       │      │ • Vector Search     │     │ • No Frameworks     │
+│ • meta.json         │      │ • Cosine Similarity │     │ • Responsive        │
+│ • Normalized        │      │ • Cross-Document    │     │ • Real-time         │
+│   Embeddings        │      │   Reasoning         │     │   Updates           │
+└─────────────────────┘      └─────────────────────┘     └─────────────────────┘
+```
 
 ### 2. 🛡️ 100% Local & Private (Zero Cost)
 Unlike API-wrapper projects, this is **Real Engineering**.
