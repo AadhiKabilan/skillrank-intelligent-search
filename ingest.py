@@ -8,12 +8,6 @@ from typing import List, Dict, Any, Optional
 from dataclasses import dataclass, asdict
 from datetime import datetime
 
-# Optional imports for embeddings
-try:
-    from openai import OpenAI
-except ImportError:
-    OpenAI = None
-
 try:
     from sentence_transformers import SentenceTransformer
 except ImportError as e:
@@ -24,7 +18,6 @@ except ImportError as e:
 DEFAULT_CHUNK_SIZE = 800
 DEFAULT_BATCH_SIZE = 100
 DEFAULT_LIMIT = None
-EMBEDDING_MODEL_OPENAI = "text-embedding-3-small"
 EMBEDDING_MODEL_LOCAL = "all-MiniLM-L6-v2"
 
 # --- Data Structures ---
@@ -46,40 +39,17 @@ class IndexMetadata:
 
 # --- Helper Functions ---
 
-def get_embedding_client(force_local: bool = False):
-    if not force_local:
-        api_key = os.getenv("OPENAI_API_KEY")
-        if api_key and OpenAI:
-            return "openai", OpenAI(api_key=api_key)
-    
-    if SentenceTransformer:
-        return "local", SentenceTransformer(EMBEDDING_MODEL_LOCAL)
-    print("Error: neither OpenAI key present nor sentence-transformers installed.")
-    sys.exit(1)
-
-def generate_embeddings(texts: List[str], client_type: str, client: Any, batch_size=100) -> np.ndarray:
+def generate_embeddings(texts: List[str], client: Any, batch_size=100) -> np.ndarray:
     embeddings = []
     total = len(texts)
     
-    print(f"Generating embeddings for {total} chunks using {client_type}...")
+    print(f"Generating embeddings for {total} chunks using local SentenceTransformer...")
     
     for i in range(0, total, batch_size):
         batch = texts[i : i + batch_size]
-        if client_type == "openai":
-            # Replace newlines similar to OpenAI recommendations
-            cleaned_batch = [t.replace("\n", " ") for t in batch]
-            try:
-                response = client.embeddings.create(input=cleaned_batch, model=EMBEDDING_MODEL_OPENAI)
-                batch_embs = [d.embedding for d in response.data]
-                embeddings.extend(batch_embs)
-            except Exception as e:
-                print(f"Error calling OpenAI API: {e}")
-                # Fallback or exit? For ingest, probably exit to avoid partial corrupted index
-                sys.exit(1)
-        else:
-            # SentenceTransformer
-            batch_embs = client.encode(batch)
-            embeddings.extend(batch_embs)
+        # SentenceTransformer
+        batch_embs = client.encode(batch)
+        embeddings.extend(batch_embs)
         
         sys.stdout.write(f"\rProcessed {min(i + batch_size, total)}/{total}")
         sys.stdout.flush()
@@ -175,12 +145,11 @@ def load_arxiv_data(filepath: str, limit: Optional[int]) -> List[Dict]:
         sys.exit(1)
 
 def main():
-    parser = argparse.ArgumentParser(description="ArXiv Semantic Search Ingestion")
+    parser = argparse.ArgumentParser(description="ArXiv Semantic Search Ingestion (Local Utility)")
     parser.add_argument("--input", default="arxivData.json", help="Path to input JSON")
     parser.add_argument("--limit", type=int, default=None, help="Limit number of papers (for demo)")
     parser.add_argument("--chunk_chars", type=int, default=DEFAULT_CHUNK_SIZE, help="Max characters per chunk")
     parser.add_argument("--output", default=".", help="Output directory for index and meta")
-    parser.add_argument("--local", action="store_true", help="Force use of local sentence-transformers")
     
     args = parser.parse_args()
     
@@ -195,10 +164,16 @@ def main():
         print("No chunks created. Exiting.")
         return
 
-    # 3. Vectorize
-    client_type, client = get_embedding_client(args.local)
+    # 3. Vectorize (Local Only)
+    if not SentenceTransformer:
+        print("Error: sentence-transformers not installed.")
+        sys.exit(1)
+        
+    print("Loading local SentenceTransformer model...")
+    client = SentenceTransformer(EMBEDDING_MODEL_LOCAL)
+    
     texts = [c.content for c in chunks]
-    vectors = generate_embeddings(texts, client_type, client)
+    vectors = generate_embeddings(texts, client)
     
     # 4. Build Index
     d = vectors.shape[1]
@@ -225,7 +200,7 @@ def main():
     meta_obj = IndexMetadata(
         chunks=chunks_data,
         index_size=len(chunks),
-        embedding_model=client_type,
+        embedding_model="local",
         created_at=datetime.utcnow().isoformat(),
         paper_count=len(papers)
     )

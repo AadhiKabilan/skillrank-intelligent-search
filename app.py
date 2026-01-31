@@ -1,6 +1,7 @@
 import os
 import json
 import time
+import requests
 import numpy as np
 import faiss
 import uvicorn
@@ -13,12 +14,6 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
 
-# Optional imports
-try:
-    from openai import OpenAI
-except ImportError:
-    OpenAI = None
-
 try:
     from sentence_transformers import SentenceTransformer
 except ImportError:
@@ -28,15 +23,12 @@ except ImportError:
 INDEX_PATH = "index.faiss"
 META_PATH = "meta.json"
 EMBEDDING_MODEL_LOCAL = "all-MiniLM-L6-v2"
-EMBEDDING_MODEL_OPENAI = "text-embedding-3-small"
 
 # --- Globals ---
 class GlobalState:
     index = None
     meta_chunks = [] # List of chunk dicts
-    embedding_client_type = None
     embedding_client = None
-    openai_client = None # For ChatCompletion
 
 state = GlobalState()
 
@@ -62,7 +54,6 @@ class SearchResponse(BaseModel):
 async def lifespan(app: FastAPI):
     # Startup
     print("Loading index and metadata...")
-    meta_embedding_model = None
     if not os.path.exists(INDEX_PATH) or not os.path.exists(META_PATH):
         print(f"WARNING: {INDEX_PATH} or {META_PATH} not found. Search will fail until ingested.")
     else:
@@ -71,28 +62,16 @@ async def lifespan(app: FastAPI):
             with open(META_PATH, 'r', encoding='utf-8') as f:
                 meta = json.load(f)
                 state.meta_chunks = meta.get('chunks', [])
-                meta_embedding_model = meta.get('embedding_model')
-            print(f"Loaded index with {state.index.ntotal} vectors and {len(state.meta_chunks)} metadata entries. Model: {meta_embedding_model}")
+            print(f"Loaded index with {state.index.ntotal} vectors and {len(state.meta_chunks)} metadata entries.")
         except Exception as e:
             print(f"Error loading index: {e}")
 
-    # Setup Embedding Client
-    api_key = os.getenv("OPENAI_API_KEY")
-    
-    # Check if we should force local based on index metadata
-    force_local = (meta_embedding_model == "local")
-    
-    if api_key and OpenAI and not force_local:
-        print("Using OpenAI for embeddings and synthesis.")
-        state.embedding_client_type = "openai"
-        state.embedding_client = OpenAI(api_key=api_key)
-        state.openai_client = OpenAI(api_key=api_key)
-    elif SentenceTransformer:
-        print("Using SentenceTransformer for embeddings. LLM synthesis unavailable.")
-        state.embedding_client_type = "local"
+    # Setup Embedding Client (Local Only)
+    if SentenceTransformer:
+        print("Using SentenceTransformer for embeddings.")
         state.embedding_client = SentenceTransformer(EMBEDDING_MODEL_LOCAL)
     else:
-        print("CRITICAL: No embedding model available.")
+        print("CRITICAL: sentence-transformers not installed.")
 
     yield
     # Shutdown
@@ -115,82 +94,18 @@ templates = Jinja2Templates(directory="templates")
 # --- Helpers ---
 def get_query_embedding(text: str) -> np.ndarray:
     text = text.replace("\n", " ")
-    if state.embedding_client_type == "openai":
-        try:
-            # Must match ingest model
-            res = state.embedding_client.embeddings.create(input=[text], model=EMBEDDING_MODEL_OPENAI)
-            vec = res.data[0].embedding
-            arr = np.array([vec], dtype='float32')
-        except Exception as e:
-            print(f"Embedding error: {e}")
-            raise HTTPException(status_code=500, detail="Embedding generation failed")
-    else:
-        # Local
-        vec = state.embedding_client.encode([text])[0]
-        arr = np.array([vec], dtype='float32')
+    # Local Embedding
+    vec = state.embedding_client.encode([text])[0]
+    arr = np.array([vec], dtype='float32')
     
     faiss.normalize_L2(arr)
     return arr
 
 def generate_llm_answer(query: str, hits: List[dict]) -> str:
-    # --- Hackathon "Golden Path" for Demo ---
-    q_lower = query.lower()
-    
-    # Query 1: Criticisms of BERT
-    if "criticisms" in q_lower and "bert" in q_lower:
-        return """From 12 papers discussing BERT, main criticisms include:
-
-1. Computational Cost (8 papers)
-   - Papers: [Devlin et al. 2019], [Rogers et al. 2020]
-   - Quote: "BERT requires substantial computational resources..."
-   
-2. Context Window Limitation (7 papers)
-   - 512 tokens insufficient for long documents
-   - Solutions: Longformer, BigBird
-
-3. Pre-training Bias (5 papers)
-   - Inherits web data biases
-   - Gender/racial bias observed
-
-Citations: 12 papers cited within context."""
-
-    # Query 2: Alternatives to Attention
-    if "alternatives" in q_lower and "attention" in q_lower:
-        return """Found 15 papers proposing alternatives:
-
-Categorized approaches:
-1. Linear Attention (7 papers)
-   - Key: "Transformers are RNNs" (Katharopoulos 2020)
-   - Approach: O(n) vs O(n²) complexity
-
-2. State Space Models (5 papers)
-   - Key: "S4" (Gu 2022)
-   - Better for long sequences
-
-3. Hybrid Models (3 papers)
-   - Combining convolution and attention for best trade-offs."""
-
-    # Query 3: Datasets
-    if "datasets" in q_lower and "used" in q_lower:
-        return """Top datasets across corpus:
-1. GLUE - 23 papers (23%)
-   - General Language Understanding Evaluation
-2. SQuAD - 16 papers (16%)
-   - Stanford Question Answering Dataset
-3. ImageNet - 12 papers (12%)
-   - Primary vision benchmark
-
-Trend: Moving from GLUE to SuperGLUE for harder tasks."""
-
-    if not state.openai_client:
-        return fallback_summary(hits)
-    
-    # Dedup papers for context
+    # 1. Build Context
     seen_ids = set()
     context_lines = []
     
-    citation_map = {} # id -> title shortcut
-
     for h in hits:
         pid = h['paper_id']
         if pid not in seen_ids:
@@ -198,19 +113,17 @@ Trend: Moving from GLUE to SuperGLUE for harder tasks."""
             title = h['title']
             text = h['content']
             context_lines.append(f"Paper ID: {pid}\nTitle: {title}\nSummary snippet: {text}\n---")
-            citation_map[pid] = title
     
-    if len(seen_ids) > 6:
-        # Cap context
-        context_lines = context_lines[:6]
+    if len(seen_ids) > 5:
+        context_lines = context_lines[:5]
     
     context_str = "\n".join(context_lines)
     
-    prompt = f"""You are a research assistant. Answer the user's question based ONLY on the following paper snippets.
-Perform cross-document reasoning if applicable.
-Cite your sources using the format: "1) Title — Paper ID".
-Keep the answer concise (3-6 sentences).
-If the context doesn't answer the question, say so.
+    # 2. Construct Prompt (Requirement: Structure & Citations)
+    prompt = f"""You are a research assistant. Answer the question based ONLY on the context below.
+Provide a structured answer with categorized points if applicable.
+Cite sources using EXACTLY this format: "Title (Paper ID)".
+Keep it concise (3-6 sentences).
 
 Context:
 {context_str}
@@ -218,21 +131,32 @@ Context:
 Question: {query}
 Answer:"""
 
+    # 3. Call Ollama (Local)
     try:
-        completion = state.openai_client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.2
-        )
-        return completion.choices[0].message.content.strip()
+        # Assumes Ollama is running on default port 11434
+        model_name = "mistral:7b" 
+        
+        payload = {
+            "model": model_name,
+            "prompt": prompt,
+            "stream": False
+        }
+        res = requests.post("http://localhost:11434/api/generate", json=payload)
+        
+        if res.status_code == 200:
+            return res.json().get("response", "").strip()
+        else:
+            print(f"Ollama Error: {res.status_code} - {res.text}")
+            return fallback_summary(hits, error_msg="Ollama service returned error.")
+            
     except Exception as e:
-        print(f"LLM Error: {e}")
-        return fallback_summary(hits, error_msg="LLM service unavailable.")
+        print(f"Ollama Connection Error: {e}")
+        return fallback_summary(hits, error_msg="Local AI service unavailable.")
 
 def fallback_summary(hits: List[dict], error_msg: str = "") -> str:
     # Simple frequent word or just concatenation of top hit titles
     titles = set(h['title'] for h in hits[:3])
-    msg = "LLM synthesis unavailable (No API key or error). "
+    msg = "LLM synthesis unavailable. "
     if error_msg: 
         msg = f"{error_msg} "
     msg += "Top relevant papers found: " + "; ".join(titles) + "."
@@ -249,7 +173,7 @@ async def search(req: SearchRequest):
     start_time = time.time()
     
     if not state.index:
-        raise HTTPException(status_code=503, detail="Index not loaded. Run ingest.py first.")
+        raise HTTPException(status_code=503, detail="Index not loaded. Run ingest.py first or download from Colab.")
 
     # 1. Embed
     q_vec = get_query_embedding(req.q)
